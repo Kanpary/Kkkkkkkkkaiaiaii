@@ -1,16 +1,15 @@
 import TelegramBot from 'node-telegram-bot-api';
-import fetch from 'node-fetch';
 
 // Variáveis de ambiente do Railway
 const token = process.env.TELEGRAM_TOKEN;
 const titaniumPrompt = process.env.PROMPT_TITANIUM;
-const apiKey = process.env.FOOTBALL_API_KEY; // sua chave da API-Football
+const apiKey = process.env.FOOTBALL_API_KEY; // chave da API-Football
 
 console.log("Bot iniciado com token:", token ? "OK" : "FALHA");
 
 const bot = new TelegramBot(token, { polling: true });
 
-// Função para buscar jogos ao vivo
+// Função para buscar jogos ao vivo em andamento
 async function buscarJogosAoVivo() {
   try {
     const url = "https://v3.football.api-sports.io/fixtures?live=all";
@@ -23,8 +22,17 @@ async function buscarJogosAoVivo() {
       return "⚠️ Nenhum jogo ao vivo encontrado no momento.";
     }
 
-    // Pegamos o primeiro jogo ao vivo como exemplo
-    const jogo = data.response[0];
+    // Filtrar apenas jogos em andamento (1H ou 2H)
+    const jogosEmAndamento = data.response.filter(jogo =>
+      jogo.fixture.status.short === "1H" || jogo.fixture.status.short === "2H"
+    );
+
+    if (jogosEmAndamento.length === 0) {
+      return "⏸️ No momento não há jogos em andamento (apenas intervalo ou encerrados).";
+    }
+
+    // Pegar o primeiro jogo em andamento
+    const jogo = jogosEmAndamento[0];
     const home = jogo.teams.home.name;
     const away = jogo.teams.away.name;
     const placar = `${jogo.goals.home} - ${jogo.goals.away}`;
@@ -46,7 +54,7 @@ bot.on('message', async (msg) => {
   if (texto.includes("entradas") || texto.includes("/start")) {
     const infoJogo = await buscarJogosAoVivo();
 
-    // Aqui você pode integrar com OpenAI ou outra IA usando titaniumPrompt
+    // Aqui você pode integrar com OpenAI usando titaniumPrompt
     // Por enquanto, vamos simular a análise:
     const respostaIA = `
 ${infoJogo}
