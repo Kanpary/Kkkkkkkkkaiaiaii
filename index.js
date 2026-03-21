@@ -16,32 +16,23 @@ function dataHoje() {
   return `${ano}-${mes}-${dia}`;
 }
 
-// Função para buscar jogos do dia e filtrar os que estão em andamento
-async function buscarJogosAoVivo() {
+// Função para buscar todos os jogos do dia e filtrar os que estão em andamento
+async function buscarJogosDoDia() {
   const url = `https://v3.football.api-sports.io/fixtures?date=${dataHoje()}`;
   const response = await fetch(url, { headers: { "x-apisports-key": apiKey } });
   const data = await response.json();
 
   if (!data.response || data.response.length === 0) {
     console.log("Nenhum jogo retornado:", data);
-    return null;
+    return [];
   }
-
-  // Log para debug
-  console.log("Jogos retornados:", data.response.map(j => ({
-    home: j.teams.home.name,
-    away: j.teams.away.name,
-    status: j.fixture.status.short,
-    statusLong: j.fixture.status.long
-  })));
 
   // Filtrar jogos que não estão encerrados ou cancelados
   const jogosEmAndamento = data.response.filter(jogo =>
     !["FT", "CANC", "PST", "NS"].includes(jogo.fixture.status.short)
   );
 
-  if (jogosEmAndamento.length === 0) return null;
-  return jogosEmAndamento[0]; // pega o primeiro jogo válido
+  return jogosEmAndamento;
 }
 
 // Função para gerar análise com Hugging Face
@@ -75,27 +66,32 @@ bot.on('message', async (msg) => {
   const texto = msg.text.toLowerCase();
 
   if (texto.includes("entradas") || texto.includes("/start")) {
-    const jogo = await buscarJogosAoVivo();
+    const jogos = await buscarJogosDoDia();
 
-    if (!jogo) {
+    if (jogos.length === 0) {
       bot.sendMessage(chatId, "⏸️ Nenhum jogo em andamento no momento.");
       return;
     }
 
-    const home = jogo.teams.home.name;
-    const away = jogo.teams.away.name;
-    const placar = `${jogo.goals.home} - ${jogo.goals.away}`;
-    const tempo = jogo.fixture.status.elapsed || "N/D";
-    const status = jogo.fixture.status.long;
+    // Montar contexto com todos os jogos
+    let contexto = "Lista de jogos em andamento hoje:\n\n";
+    jogos.forEach(jogo => {
+      const home = jogo.teams.home.name;
+      const away = jogo.teams.away.name;
+      const placar = `${jogo.goals.home} - ${jogo.goals.away}`;
+      const tempo = jogo.fixture.status.elapsed || "N/D";
+      const status = jogo.fixture.status.long;
 
-    const contexto = `
-Jogo: ${home} vs ${away}
-Placar atual: ${placar}
-Minuto: ${tempo}
-Status: ${status}
-`;
+      contexto += `Jogo: ${home} vs ${away}\nPlacar: ${placar}\nMinuto: ${tempo}\nStatus: ${status}\n\n`;
+    });
 
+    // Passar todos os jogos para a IA escolher o mais relevante
     const respostaIA = await gerarAnaliseTitanium(contexto);
+
+    // Primeiro mostra a lista para o usuário
+    bot.sendMessage(chatId, contexto);
+
+    // Depois mostra a análise da IA
     bot.sendMessage(chatId, respostaIA);
   }
 });
