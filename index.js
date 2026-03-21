@@ -13,16 +13,29 @@ async function buscarJogosAoVivo() {
   const response = await fetch(url, { headers: { "x-apisports-key": apiKey } });
   const data = await response.json();
 
-  // Incluir todos os status que representam partidas em andamento
+  if (!data.response || data.response.length === 0) {
+    console.log("Nenhum jogo retornado pela API:", data);
+    return null;
+  }
+
+  // Logar todos os jogos para debug
+  console.log("Jogos retornados:", data.response.map(j => ({
+    home: j.teams.home.name,
+    away: j.teams.away.name,
+    status: j.fixture.status.short,
+    statusLong: j.fixture.status.long
+  })));
+
+  // Não filtrar demais: pegar o primeiro jogo que não esteja encerrado
   const jogosEmAndamento = data.response.filter(jogo =>
-    ["1H", "HT", "2H", "ET", "BT", "P"].includes(jogo.fixture.status.short)
+    jogo.fixture.status.short !== "FT" && jogo.fixture.status.short !== "CANC"
   );
 
   if (jogosEmAndamento.length === 0) return null;
-  return jogosEmAndamento[0]; // pega o primeiro jogo relevante
+  return jogosEmAndamento[0];
 }
 
-// Função para gerar análise com Hugging Face (endpoint atualizado)
+// Função para gerar análise com Hugging Face
 async function gerarAnaliseTitanium(contexto) {
   const response = await fetch("https://router.huggingface.co/models/mistralai/Mistral-7B-Instruct", {
     method: "POST",
@@ -37,7 +50,6 @@ async function gerarAnaliseTitanium(contexto) {
 
   const data = await response.json();
 
-  // Tratar diferentes formatos de resposta
   if (Array.isArray(data) && data[0]?.generated_text) {
     return data[0].generated_text;
   } else if (data?.outputs && typeof data.outputs[0] === "string") {
@@ -64,8 +76,8 @@ bot.on('message', async (msg) => {
     const home = jogo.teams.home.name;
     const away = jogo.teams.away.name;
     const placar = `${jogo.goals.home} - ${jogo.goals.away}`;
-    const tempo = jogo.fixture.status.elapsed;
-    const status = jogo.fixture.status.long; // descrição completa do status
+    const tempo = jogo.fixture.status.elapsed || "N/D";
+    const status = jogo.fixture.status.long;
 
     const contexto = `
 Jogo: ${home} vs ${away}
