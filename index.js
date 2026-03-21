@@ -13,12 +13,13 @@ async function buscarJogosAoVivo() {
   const response = await fetch(url, { headers: { "x-apisports-key": apiKey } });
   const data = await response.json();
 
+  // Incluir todos os status que representam partidas em andamento
   const jogosEmAndamento = data.response.filter(jogo =>
-    jogo.fixture.status.short === "1H" || jogo.fixture.status.short === "2H"
+    ["1H", "HT", "2H", "ET", "BT", "P"].includes(jogo.fixture.status.short)
   );
 
   if (jogosEmAndamento.length === 0) return null;
-  return jogosEmAndamento[0];
+  return jogosEmAndamento[0]; // pega o primeiro jogo relevante
 }
 
 // Função para gerar análise com Hugging Face (endpoint atualizado)
@@ -64,11 +65,13 @@ bot.on('message', async (msg) => {
     const away = jogo.teams.away.name;
     const placar = `${jogo.goals.home} - ${jogo.goals.away}`;
     const tempo = jogo.fixture.status.elapsed;
+    const status = jogo.fixture.status.long; // descrição completa do status
 
     const contexto = `
 Jogo: ${home} vs ${away}
 Placar atual: ${placar}
 Minuto: ${tempo}
+Status: ${status}
 `;
 
     const respostaIA = await gerarAnaliseTitanium(contexto);
