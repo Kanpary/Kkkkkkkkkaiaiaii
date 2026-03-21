@@ -1,46 +1,59 @@
 import TelegramBot from 'node-telegram-bot-api';
+import puppeteer from 'puppeteer';
 
 const token = process.env.TELEGRAM_TOKEN;
 const titaniumPrompt = process.env.PROMPT_TITANIUM;
-const apiKey = process.env.FOOTBALL_API_KEY;
 const hfKey = process.env.HF_API_KEY;
 
 const bot = new TelegramBot(token, { polling: true });
 
-let ultimoFetch = 0;
-let cacheJogos = [];
+// Função para buscar jogos ao vivo no Sofascore
+async function buscarJogosAoVivo() {
+  const browser = await puppeteer.launch({ headless: true });
+  const page = await browser.newPage();
+  await page.goto("https://www.sofascore.com/football/live", { waitUntil: "networkidle2" });
 
-// Função para obter a data atual em formato YYYY-MM-DD
-function dataHoje() {
-  const hoje = new Date();
-  const ano = hoje.getFullYear();
-  const mes = String(hoje.getMonth() + 1).padStart(2, '0');
-  const dia = String(hoje.getDate()).padStart(2, '0');
-  return `${ano}-${mes}-${dia}`;
+  // Extrair links dos jogos
+  const jogos = await page.evaluate(() => {
+    const partidas = [];
+    document.querySelectorAll(".event-row").forEach(row => {
+      const home = row.querySelector(".cell__content--home")?.innerText || "";
+      const away = row.querySelector(".cell__content--away")?.innerText || "";
+      const placar = row.querySelector(".cell__content--score")?.innerText || "";
+      const tempo = row.querySelector(".cell__content--time")?.innerText || "";
+      const link = row.querySelector("a")?.href || "";
+      if (home && away && link) {
+        partidas.push({ home, away, placar, tempo, link });
+      }
+    });
+    return partidas;
+  });
+
+  await browser.close();
+  return jogos;
 }
 
-// Buscar jogos do dia com cache
-async function buscarJogosDoDia() {
-  const agora = Date.now();
-  if (cacheJogos.length > 0 && (agora - ultimoFetch < 60000)) {
-    return cacheJogos; // usa cache se foi buscado há menos de 1 min
-  }
+// Função para buscar estatísticas de um jogo específico
+async function buscarEstatisticasJogo(urlJogo) {
+  const browser = await puppeteer.launch({ headless: true });
+  const page = await browser.newPage();
+  await page.goto(urlJogo, { waitUntil: "networkidle2" });
 
-  const url = `https://v3.football.api-sports.io/fixtures?date=${dataHoje()}`;
-  const response = await fetch(url, { headers: { "x-apisports-key": apiKey } });
-  const data = await response.json();
+  const estatisticas = await page.evaluate(() => {
+    const stats = {};
+    document.querySelectorAll(".stat__row").forEach(row => {
+      const nome = row.querySelector(".stat__name")?.innerText;
+      const home = row.querySelector(".stat__home")?.innerText;
+      const away = row.querySelector(".stat__away")?.innerText;
+      if (nome) {
+        stats[nome] = { home, away };
+      }
+    });
+    return stats;
+  });
 
-  ultimoFetch = agora;
-  cacheJogos = data.response || [];
-
-  // Status que indicam jogo em andamento
-  const statusValidos = ["1H", "HT", "2H", "ET", "BT", "P", "LIVE"];
-
-  const jogosEmAndamento = cacheJogos.filter(jogo =>
-    statusValidos.includes(jogo.fixture.status.short)
-  );
-
-  return jogosEmAndamento;
+  await browser.close();
+  return estatisticas;
 }
 
 // Função para gerar análise com Hugging Face
@@ -74,131 +87,29 @@ bot.on('message', async (msg) => {
   const texto = msg.text.toLowerCase();
 
   if (texto.includes("entradas") || texto.includes("/start")) {
-    const jogos = await buscarJogosDoDia();
+    const jogos = await buscarJogosAoVivo();
 
     if (jogos.length === 0) {
       bot.sendMessage(chatId, "⏸️ Nenhum jogo em andamento no momento.");
       return;
     }
 
-    // Montar contexto com todos os jogos
-    let contexto = "Lista de jogos em andamento hoje:\n\n";
+    // Montar lista de jogos
+    let lista = "Jogos em andamento:\n\n";
     jogos.forEach((jogo, i) => {
-      const home = jogo.teams.home.name;
-      const away = jogo.teams.away.name;
-      const placar = `${jogo.goals.home} - ${jogo.goals.away}`;
-      const tempo = jogo.fixture.status.elapsed || "N/D";
-      const status = jogo.fixture.status.long;
-
-      contexto += `(${i+1}) ${home} vs ${away}\nPlacar: ${placar}\nMinuto: ${tempo}\nStatus: ${status}\n\n`;
+      lista += `(${i+1}) ${jogo.home} vs ${jogo.away}\nPlacar: ${jogo.placar}\nTempo: ${jogo.tempo}\n\n`;
     });
 
-    // Primeiro mostra a lista para o usuário
-    bot.sendMessage(chatId, contexto);
+    bot.sendMessage(chatId, lista);
 
-    // Depois passa todos os jogos para a IA escolher o mais relevante
-    const respostaIA = await gerarAnaliseTitanium(contexto);
-    bot.sendMessage(chatId, respostaIA);
-  }
-});import TelegramBot from 'node-telegram-bot-api';
+    // Buscar estatísticas do primeiro jogo como exemplo
+    const estatisticas = await buscarEstatisticasJogo(jogos[0].link);
 
-const token = process.env.TELEGRAM_TOKEN;
-const titaniumPrompt = process.env.PROMPT_TITANIUM;
-const apiKey = process.env.FOOTBALL_API_KEY;
-const hfKey = process.env.HF_API_KEY;
-
-const bot = new TelegramBot(token, { polling: true });
-
-let ultimoFetch = 0;
-let cacheJogos = [];
-
-// Função para obter a data atual em formato YYYY-MM-DD
-function dataHoje() {
-  const hoje = new Date();
-  const ano = hoje.getFullYear();
-  const mes = String(hoje.getMonth() + 1).padStart(2, '0');
-  const dia = String(hoje.getDate()).padStart(2, '0');
-  return `${ano}-${mes}-${dia}`;
-}
-
-// Buscar jogos do dia com cache
-async function buscarJogosDoDia() {
-  const agora = Date.now();
-  if (cacheJogos.length > 0 && (agora - ultimoFetch < 60000)) {
-    return cacheJogos; // usa cache se foi buscado há menos de 1 min
-  }
-
-  const url = `https://v3.football.api-sports.io/fixtures?date=${dataHoje()}`;
-  const response = await fetch(url, { headers: { "x-apisports-key": apiKey } });
-  const data = await response.json();
-
-  ultimoFetch = agora;
-  cacheJogos = data.response || [];
-
-  // Status que indicam jogo em andamento
-  const statusValidos = ["1H", "HT", "2H", "ET", "BT", "P", "LIVE"];
-
-  const jogosEmAndamento = cacheJogos.filter(jogo =>
-    statusValidos.includes(jogo.fixture.status.short)
-  );
-
-  return jogosEmAndamento;
-}
-
-// Função para gerar análise com Hugging Face
-async function gerarAnaliseTitanium(contexto) {
-  const response = await fetch("https://router.huggingface.co/models/mistralai/Mistral-7B-Instruct", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${hfKey}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      inputs: `${titaniumPrompt}\n\n${contexto}`
-    })
-  });
-
-  const data = await response.json();
-
-  if (Array.isArray(data) && data[0]?.generated_text) {
-    return data[0].generated_text;
-  } else if (data?.outputs && typeof data.outputs[0] === "string") {
-    return data.outputs[0];
-  } else if (data.error) {
-    return `❌ Erro da IA: ${data.error}`;
-  } else {
-    return "⚠️ Não foi possível gerar análise.";
-  }
-}
-
-bot.on('message', async (msg) => {
-  const chatId = msg.chat.id;
-  const texto = msg.text.toLowerCase();
-
-  if (texto.includes("entradas") || texto.includes("/start")) {
-    const jogos = await buscarJogosDoDia();
-
-    if (jogos.length === 0) {
-      bot.sendMessage(chatId, "⏸️ Nenhum jogo em andamento no momento.");
-      return;
+    let contexto = `Jogo: ${jogos[0].home} vs ${jogos[0].away}\nPlacar: ${jogos[0].placar}\nTempo: ${jogos[0].tempo}\n\nEstatísticas:\n`;
+    for (const [nome, valores] of Object.entries(estatisticas)) {
+      contexto += `${nome}: ${valores.home} - ${valores.away}\n`;
     }
 
-    // Montar contexto com todos os jogos
-    let contexto = "Lista de jogos em andamento hoje:\n\n";
-    jogos.forEach((jogo, i) => {
-      const home = jogo.teams.home.name;
-      const away = jogo.teams.away.name;
-      const placar = `${jogo.goals.home} - ${jogo.goals.away}`;
-      const tempo = jogo.fixture.status.elapsed || "N/D";
-      const status = jogo.fixture.status.long;
-
-      contexto += `(${i+1}) ${home} vs ${away}\nPlacar: ${placar}\nMinuto: ${tempo}\nStatus: ${status}\n\n`;
-    });
-
-    // Primeiro mostra a lista para o usuário
-    bot.sendMessage(chatId, contexto);
-
-    // Depois passa todos os jogos para a IA escolher o mais relevante
     const respostaIA = await gerarAnaliseTitanium(contexto);
     bot.sendMessage(chatId, respostaIA);
   }
