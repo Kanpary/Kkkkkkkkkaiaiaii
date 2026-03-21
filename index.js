@@ -7,13 +7,14 @@ const hfKey = process.env.HF_API_KEY;
 
 const bot = new TelegramBot(token, { polling: true });
 
+let jogosCache = []; // guardar lista de jogos para referência
+
 // Função para buscar jogos ao vivo no Sofascore
 async function buscarJogosAoVivo() {
   const browser = await puppeteer.launch({ headless: true });
   const page = await browser.newPage();
   await page.goto("https://www.sofascore.com/football/live", { waitUntil: "networkidle2" });
 
-  // Extrair links dos jogos
   const jogos = await page.evaluate(() => {
     const partidas = [];
     document.querySelectorAll(".event-row").forEach(row => {
@@ -86,6 +87,7 @@ bot.on('message', async (msg) => {
   const chatId = msg.chat.id;
   const texto = msg.text.toLowerCase();
 
+  // Comando inicial: listar jogos
   if (texto.includes("entradas") || texto.includes("/start")) {
     const jogos = await buscarJogosAoVivo();
 
@@ -94,18 +96,29 @@ bot.on('message', async (msg) => {
       return;
     }
 
-    // Montar lista de jogos
+    jogosCache = jogos; // salvar lista para referência
+
     let lista = "Jogos em andamento:\n\n";
     jogos.forEach((jogo, i) => {
       lista += `(${i+1}) ${jogo.home} vs ${jogo.away}\nPlacar: ${jogo.placar}\nTempo: ${jogo.tempo}\n\n`;
     });
 
     bot.sendMessage(chatId, lista);
+    bot.sendMessage(chatId, "Digite 'analisar jogo X' para ver estatísticas detalhadas (ex: analisar jogo 2).");
+  }
 
-    // Buscar estatísticas do primeiro jogo como exemplo
-    const estatisticas = await buscarEstatisticasJogo(jogos[0].link);
+  // Comando para analisar jogo específico
+  if (texto.startsWith("analisar jogo")) {
+    const numero = parseInt(texto.replace("analisar jogo", "").trim());
+    if (isNaN(numero) || numero < 1 || numero > jogosCache.length) {
+      bot.sendMessage(chatId, "⚠️ Número inválido. Escolha um dos jogos listados.");
+      return;
+    }
 
-    let contexto = `Jogo: ${jogos[0].home} vs ${jogos[0].away}\nPlacar: ${jogos[0].placar}\nTempo: ${jogos[0].tempo}\n\nEstatísticas:\n`;
+    const jogo = jogosCache[numero - 1];
+    const estatisticas = await buscarEstatisticasJogo(jogo.link);
+
+    let contexto = `Jogo: ${jogo.home} vs ${jogo.away}\nPlacar: ${jogo.placar}\nTempo: ${jogo.tempo}\n\nEstatísticas:\n`;
     for (const [nome, valores] of Object.entries(estatisticas)) {
       contexto += `${nome}: ${valores.home} - ${valores.away}\n`;
     }
