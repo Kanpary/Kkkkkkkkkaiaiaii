@@ -7,6 +7,9 @@ const hfKey = process.env.HF_API_KEY;
 
 const bot = new TelegramBot(token, { polling: true });
 
+let ultimoFetch = 0;
+let cacheJogos = [];
+
 // Função para obter a data atual em formato YYYY-MM-DD
 function dataHoje() {
   const hoje = new Date();
@@ -16,20 +19,25 @@ function dataHoje() {
   return `${ano}-${mes}-${dia}`;
 }
 
-// Função para buscar todos os jogos do dia e filtrar os que estão em andamento
+// Buscar jogos do dia com cache
 async function buscarJogosDoDia() {
+  const agora = Date.now();
+  if (cacheJogos.length > 0 && (agora - ultimoFetch < 60000)) {
+    return cacheJogos; // usa cache se foi buscado há menos de 1 min
+  }
+
   const url = `https://v3.football.api-sports.io/fixtures?date=${dataHoje()}`;
   const response = await fetch(url, { headers: { "x-apisports-key": apiKey } });
   const data = await response.json();
 
-  if (!data.response || data.response.length === 0) {
-    console.log("Nenhum jogo retornado:", data);
-    return [];
-  }
+  ultimoFetch = agora;
+  cacheJogos = data.response || [];
 
-  // Filtrar jogos que não estão encerrados ou cancelados
-  const jogosEmAndamento = data.response.filter(jogo =>
-    !["FT", "CANC", "PST", "NS"].includes(jogo.fixture.status.short)
+  // Status que indicam jogo em andamento
+  const statusValidos = ["1H", "HT", "2H", "ET", "BT", "P", "LIVE"];
+
+  const jogosEmAndamento = cacheJogos.filter(jogo =>
+    statusValidos.includes(jogo.fixture.status.short)
   );
 
   return jogosEmAndamento;
@@ -75,23 +83,21 @@ bot.on('message', async (msg) => {
 
     // Montar contexto com todos os jogos
     let contexto = "Lista de jogos em andamento hoje:\n\n";
-    jogos.forEach(jogo => {
+    jogos.forEach((jogo, i) => {
       const home = jogo.teams.home.name;
       const away = jogo.teams.away.name;
       const placar = `${jogo.goals.home} - ${jogo.goals.away}`;
       const tempo = jogo.fixture.status.elapsed || "N/D";
       const status = jogo.fixture.status.long;
 
-      contexto += `Jogo: ${home} vs ${away}\nPlacar: ${placar}\nMinuto: ${tempo}\nStatus: ${status}\n\n`;
+      contexto += `(${i+1}) ${home} vs ${away}\nPlacar: ${placar}\nMinuto: ${tempo}\nStatus: ${status}\n\n`;
     });
-
-    // Passar todos os jogos para a IA escolher o mais relevante
-    const respostaIA = await gerarAnaliseTitanium(contexto);
 
     // Primeiro mostra a lista para o usuário
     bot.sendMessage(chatId, contexto);
 
-    // Depois mostra a análise da IA
+    // Depois passa todos os jogos para a IA escolher o mais relevante
+    const respostaIA = await gerarAnaliseTitanium(contexto);
     bot.sendMessage(chatId, respostaIA);
   }
 });
