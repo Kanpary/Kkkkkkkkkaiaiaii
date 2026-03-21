@@ -1,50 +1,41 @@
 import TelegramBot from 'node-telegram-bot-api';
 
-// Variáveis de ambiente do Railway
 const token = process.env.TELEGRAM_TOKEN;
 const titaniumPrompt = process.env.PROMPT_TITANIUM;
-const apiKey = process.env.FOOTBALL_API_KEY; // chave da API-Football
-
-console.log("Bot iniciado com token:", token ? "OK" : "FALHA");
+const apiKey = process.env.FOOTBALL_API_KEY;
+const hfKey = process.env.HF_API_KEY;
 
 const bot = new TelegramBot(token, { polling: true });
 
-// Função para buscar jogos ao vivo em andamento
+// Função para buscar jogos ao vivo
 async function buscarJogosAoVivo() {
-  try {
-    const url = "https://v3.football.api-sports.io/fixtures?live=all";
-    const response = await fetch(url, {
-      headers: { "x-apisports-key": apiKey }
-    });
-    const data = await response.json();
+  const url = "https://v3.football.api-sports.io/fixtures?live=all";
+  const response = await fetch(url, { headers: { "x-apisports-key": apiKey } });
+  const data = await response.json();
 
-    if (!data.response || data.response.length === 0) {
-      return "⚠️ Nenhum jogo ao vivo encontrado no momento.";
-    }
+  const jogosEmAndamento = data.response.filter(jogo =>
+    jogo.fixture.status.short === "1H" || jogo.fixture.status.short === "2H"
+  );
 
-    // Filtrar apenas jogos em andamento (1H ou 2H)
-    const jogosEmAndamento = data.response.filter(jogo =>
-      jogo.fixture.status.short === "1H" || jogo.fixture.status.short === "2H"
-    );
+  if (jogosEmAndamento.length === 0) return null;
+  return jogosEmAndamento[0];
+}
 
-    if (jogosEmAndamento.length === 0) {
-      return "⏸️ No momento não há jogos em andamento (apenas intervalo ou encerrados).";
-    }
+// Função para gerar análise com Hugging Face
+async function gerarAnaliseTitanium(contexto) {
+  const response = await fetch("https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${hfKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      inputs: `${titaniumPrompt}\n\n${contexto}`
+    })
+  });
 
-    // Pegar o primeiro jogo em andamento
-    const jogo = jogosEmAndamento[0];
-    const home = jogo.teams.home.name;
-    const away = jogo.teams.away.name;
-    const placar = `${jogo.goals.home} - ${jogo.goals.away}`;
-    const tempo = jogo.fixture.status.elapsed;
-
-    return `📌 Jogo ao vivo (Brasília): ${home} vs ${away}
-⏱️ Minuto: ${tempo}
-🔢 Placar atual: ${placar}`;
-  } catch (err) {
-    console.error("Erro ao buscar jogos:", err);
-    return "❌ Erro ao buscar jogos ao vivo.";
-  }
+  const data = await response.json();
+  return data[0]?.generated_text || "⚠️ Não foi possível gerar análise.";
 }
 
 bot.on('message', async (msg) => {
@@ -52,20 +43,25 @@ bot.on('message', async (msg) => {
   const texto = msg.text.toLowerCase();
 
   if (texto.includes("entradas") || texto.includes("/start")) {
-    const infoJogo = await buscarJogosAoVivo();
+    const jogo = await buscarJogosAoVivo();
 
-    // Aqui você pode integrar com OpenAI usando titaniumPrompt
-    // Por enquanto, vamos simular a análise:
-    const respostaIA = `
-${infoJogo}
+    if (!jogo) {
+      bot.sendMessage(chatId, "⏸️ Nenhum jogo em andamento no momento.");
+      return;
+    }
 
-🥇 Placar Exato Principal: 2-1 | Probabilidade: 68% | Justificativa: pressão ofensiva alta
-🔄 Alternativo 1: 1-1 | Probabilidade: 20%
-🔄 Alternativo 2: 3-1 | Probabilidade: 12%
-📊 Distribuição: principais resultados concentrados em 1-1, 2-1, 3-1
-📈 Convergência: 92% | Assertividade: 70% | Risco: Médio
+    const home = jogo.teams.home.name;
+    const away = jogo.teams.away.name;
+    const placar = `${jogo.goals.home} - ${jogo.goals.away}`;
+    const tempo = jogo.fixture.status.elapsed;
+
+    const contexto = `
+Jogo: ${home} vs ${away}
+Placar atual: ${placar}
+Minuto: ${tempo}
 `;
 
+    const respostaIA = await gerarAnaliseTitanium(contexto);
     bot.sendMessage(chatId, respostaIA);
   }
 });
