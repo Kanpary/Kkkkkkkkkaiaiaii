@@ -7,18 +7,27 @@ const hfKey = process.env.HF_API_KEY;
 
 const bot = new TelegramBot(token, { polling: true });
 
-// Função para buscar jogos ao vivo
+// Função para obter a data atual em formato YYYY-MM-DD
+function dataHoje() {
+  const hoje = new Date();
+  const ano = hoje.getFullYear();
+  const mes = String(hoje.getMonth() + 1).padStart(2, '0');
+  const dia = String(hoje.getDate()).padStart(2, '0');
+  return `${ano}-${mes}-${dia}`;
+}
+
+// Função para buscar jogos do dia e filtrar os que estão em andamento
 async function buscarJogosAoVivo() {
-  const url = "https://v3.football.api-sports.io/fixtures?live=all";
+  const url = `https://v3.football.api-sports.io/fixtures?date=${dataHoje()}`;
   const response = await fetch(url, { headers: { "x-apisports-key": apiKey } });
   const data = await response.json();
 
   if (!data.response || data.response.length === 0) {
-    console.log("Nenhum jogo retornado pela API:", data);
+    console.log("Nenhum jogo retornado:", data);
     return null;
   }
 
-  // Logar todos os jogos para debug
+  // Log para debug
   console.log("Jogos retornados:", data.response.map(j => ({
     home: j.teams.home.name,
     away: j.teams.away.name,
@@ -26,13 +35,13 @@ async function buscarJogosAoVivo() {
     statusLong: j.fixture.status.long
   })));
 
-  // Não filtrar demais: pegar o primeiro jogo que não esteja encerrado
+  // Filtrar jogos que não estão encerrados ou cancelados
   const jogosEmAndamento = data.response.filter(jogo =>
-    jogo.fixture.status.short !== "FT" && jogo.fixture.status.short !== "CANC"
+    !["FT", "CANC", "PST", "NS"].includes(jogo.fixture.status.short)
   );
 
   if (jogosEmAndamento.length === 0) return null;
-  return jogosEmAndamento[0];
+  return jogosEmAndamento[0]; // pega o primeiro jogo válido
 }
 
 // Função para gerar análise com Hugging Face
