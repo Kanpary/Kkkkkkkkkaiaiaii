@@ -7,7 +7,7 @@ const hfKey = process.env.HF_API_KEY;
 
 const bot = new TelegramBot(token, { polling: true });
 
-// Função para buscar jogos ao vivo
+// Buscar jogos ao vivo
 async function buscarJogosAoVivo() {
   const url = "https://v3.football.api-sports.io/fixtures?live=all";
   const response = await fetch(url, { headers: { "x-apisports-key": apiKey } });
@@ -21,9 +21,9 @@ async function buscarJogosAoVivo() {
   return jogosEmAndamento[0];
 }
 
-// Função para gerar análise com Hugging Face
+// Gerar análise com Hugging Face
 async function gerarAnaliseTitanium(contexto) {
-  const response = await fetch("https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct", {
+  const response = await fetch("https://api-inference.huggingface.co/models/tiiuae/falcon-7b-instruct", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${hfKey}`,
@@ -35,7 +35,15 @@ async function gerarAnaliseTitanium(contexto) {
   });
 
   const data = await response.json();
-  return data[0]?.generated_text || "⚠️ Não foi possível gerar análise.";
+
+  // Tratar diferentes formatos de resposta
+  if (Array.isArray(data) && data[0]?.generated_text) {
+    return data[0].generated_text;
+  } else if (data.error) {
+    return `❌ Erro da IA: ${data.error}`;
+  } else {
+    return "⚠️ Não foi possível gerar análise.";
+  }
 }
 
 bot.on('message', async (msg) => {
