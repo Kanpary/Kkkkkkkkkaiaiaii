@@ -3,13 +3,14 @@ import TelegramBot from 'node-telegram-bot-api';
 const token = process.env.TELEGRAM_TOKEN;
 const titaniumPrompt = process.env.PROMPT_TITANIUM;
 
+console.log("Bot iniciado com token:", token ? "OK" : "FALHA");
+
 const bot = new TelegramBot(token, { polling: true });
 
 bot.on('message', (msg) => {
   const chatId = msg.chat.id;
+  console.log("Mensagem recebida:", msg.text);
 
-  // Aqui você chamaria a IA (OpenAI, Azure, etc.) passando o PROMPT TITANIUM
-  // Para simplificar, vamos simular uma resposta:
   const resposta = `
 📌 Jogo selecionado automaticamente (Brasília, ao vivo)
 🥇 Placar Exato Principal: 2-1 | Probabilidade: 68% | Justificativa: pressão ofensiva alta
