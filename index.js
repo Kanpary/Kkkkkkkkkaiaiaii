@@ -30,7 +30,7 @@ async function buscarJogosAoVivo() {
   const $ = cheerio.load(data);
   const jogos = [];
 
-  $(".event__match").each((i, el) => {
+  $(".event__match--live").each((i, el) => {
     const home = $(el).find(".event__participant--home").text().trim();
     const away = $(el).find(".event__participant--away").text().trim();
     const placar = $(el).find(".event__scores").text().trim();
