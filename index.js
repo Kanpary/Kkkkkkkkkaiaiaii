@@ -1,5 +1,6 @@
 import TelegramBot from 'node-telegram-bot-api';
-import puppeteer from 'puppeteer';
+import axios from 'axios';
+import * as cheerio from 'cheerio';
 
 const token = process.env.TELEGRAM_TOKEN;
 const titaniumPrompt = process.env.PROMPT_TITANIUM;
@@ -11,49 +12,41 @@ let jogosCache = []; // guardar lista de jogos para referência
 
 // Função para buscar jogos ao vivo no Sofascore
 async function buscarJogosAoVivo() {
-  const browser = await puppeteer.launch({ headless: true });
-  const page = await browser.newPage();
-  await page.goto("https://www.sofascore.com/football/live", { waitUntil: "networkidle2" });
+  const url = "https://www.sofascore.com/football/live";
+  const { data } = await axios.get(url);
+  const $ = cheerio.load(data);
 
-  const jogos = await page.evaluate(() => {
-    const partidas = [];
-    document.querySelectorAll(".event-row").forEach(row => {
-      const home = row.querySelector(".cell__content--home")?.innerText || "";
-      const away = row.querySelector(".cell__content--away")?.innerText || "";
-      const placar = row.querySelector(".cell__content--score")?.innerText || "";
-      const tempo = row.querySelector(".cell__content--time")?.innerText || "";
-      const link = row.querySelector("a")?.href || "";
-      if (home && away && link) {
-        partidas.push({ home, away, placar, tempo, link });
-      }
-    });
-    return partidas;
+  const jogos = [];
+  $(".event-row").each((i, el) => {
+    const home = $(el).find(".cell__content--home").text().trim();
+    const away = $(el).find(".cell__content--away").text().trim();
+    const placar = $(el).find(".cell__content--score").text().trim();
+    const tempo = $(el).find(".cell__content--time").text().trim();
+    const link = "https://www.sofascore.com" + $(el).find("a").attr("href");
+
+    if (home && away && link) {
+      jogos.push({ home, away, placar, tempo, link });
+    }
   });
 
-  await browser.close();
   return jogos;
 }
 
 // Função para buscar estatísticas de um jogo específico
 async function buscarEstatisticasJogo(urlJogo) {
-  const browser = await puppeteer.launch({ headless: true });
-  const page = await browser.newPage();
-  await page.goto(urlJogo, { waitUntil: "networkidle2" });
+  const { data } = await axios.get(urlJogo);
+  const $ = cheerio.load(data);
 
-  const estatisticas = await page.evaluate(() => {
-    const stats = {};
-    document.querySelectorAll(".stat__row").forEach(row => {
-      const nome = row.querySelector(".stat__name")?.innerText;
-      const home = row.querySelector(".stat__home")?.innerText;
-      const away = row.querySelector(".stat__away")?.innerText;
-      if (nome) {
-        stats[nome] = { home, away };
-      }
-    });
-    return stats;
+  const estatisticas = {};
+  $(".stat__row").each((i, el) => {
+    const nome = $(el).find(".stat__name").text().trim();
+    const home = $(el).find(".stat__home").text().trim();
+    const away = $(el).find(".stat__away").text().trim();
+    if (nome) {
+      estatisticas[nome] = { home, away };
+    }
   });
 
-  await browser.close();
   return estatisticas;
 }
 
@@ -71,16 +64,7 @@ async function gerarAnaliseTitanium(contexto) {
   });
 
   const data = await response.json();
-
-  if (Array.isArray(data) && data[0]?.generated_text) {
-    return data[0].generated_text;
-  } else if (data?.outputs && typeof data.outputs[0] === "string") {
-    return data.outputs[0];
-  } else if (data.error) {
-    return `❌ Erro da IA: ${data.error}`;
-  } else {
-    return "⚠️ Não foi possível gerar análise.";
-  }
+  return data[0]?.generated_text || "⚠️ Não foi possível gerar análise.";
 }
 
 bot.on('message', async (msg) => {
@@ -96,7 +80,7 @@ bot.on('message', async (msg) => {
       return;
     }
 
-    jogosCache = jogos; // salvar lista para referência
+    jogosCache = jogos;
 
     let lista = "Jogos em andamento:\n\n";
     jogos.forEach((jogo, i) => {
