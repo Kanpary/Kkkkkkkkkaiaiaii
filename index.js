@@ -11,7 +11,7 @@ const bot = new TelegramBot(token, { polling: true });
 let jogosCache = [];
 let ultimoFetch = 0;
 
-// Função para buscar jogos ao vivo no Sofascore com cache
+// Função para buscar jogos ao vivo com cache
 async function buscarJogosAoVivo() {
   const agora = Date.now();
   if (jogosCache.length > 0 && (agora - ultimoFetch < 60000)) {
