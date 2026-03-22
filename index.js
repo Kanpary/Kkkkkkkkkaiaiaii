@@ -30,6 +30,7 @@ async function buscarJogosAoVivo() {
   const $ = cheerio.load(data);
   const jogos = [];
 
+  // Seleciona apenas partidas em andamento
   $(".event__match--live").each((i, el) => {
     const home = $(el).find(".event__participant--home").text().trim();
     const away = $(el).find(".event__participant--away").text().trim();
@@ -95,7 +96,6 @@ bot.on('message', async (msg) => {
     }
 
     const jogo = jogosCache[numero - 1];
-
     let contexto = `Jogo: ${jogo.home} vs ${jogo.away}\nPlacar: ${jogo.placar}\nTempo: ${jogo.tempo}`;
     const respostaIA = await gerarAnaliseTitanium(contexto);
 
