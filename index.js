@@ -8,10 +8,16 @@ const hfKey = process.env.HF_API_KEY;
 
 const bot = new TelegramBot(token, { polling: true });
 
-let jogosCache = []; // guardar lista de jogos para referência
+let jogosCache = [];
+let ultimoFetch = 0;
 
-// Função para buscar jogos ao vivo no Sofascore
+// Função para buscar jogos ao vivo no Sofascore com cache
 async function buscarJogosAoVivo() {
+  const agora = Date.now();
+  if (jogosCache.length > 0 && (agora - ultimoFetch < 60000)) {
+    return jogosCache;
+  }
+
   const url = "https://www.sofascore.com/football/live";
   const { data } = await axios.get(url);
   const $ = cheerio.load(data);
@@ -29,6 +35,10 @@ async function buscarJogosAoVivo() {
     }
   });
 
+  ultimoFetch = agora;
+  jogosCache = jogos;
+
+  console.log("Jogos encontrados:", jogos.length); // log mínimo
   return jogos;
 }
 
@@ -67,6 +77,7 @@ async function gerarAnaliseTitanium(contexto) {
   return data[0]?.generated_text || "⚠️ Não foi possível gerar análise.";
 }
 
+// Bot Telegram
 bot.on('message', async (msg) => {
   const chatId = msg.chat.id;
   const texto = msg.text.toLowerCase();
@@ -79,8 +90,6 @@ bot.on('message', async (msg) => {
       bot.sendMessage(chatId, "⏸️ Nenhum jogo em andamento no momento.");
       return;
     }
-
-    jogosCache = jogos;
 
     let lista = "Jogos em andamento:\n\n";
     jogos.forEach((jogo, i) => {
