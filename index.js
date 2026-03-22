@@ -1,52 +1,26 @@
 import TelegramBot from 'node-telegram-bot-api';
 import axios from 'axios';
-import * as cheerio from 'cheerio';
 
 const token = process.env.TELEGRAM_TOKEN;
+const apiKey = process.env.API_FUTEBOL_KEY; // sua chave da API-Futebol
 const titaniumPrompt = process.env.PROMPT_TITANIUM;
 const hfKey = process.env.HF_API_KEY;
 
 const bot = new TelegramBot(token, { polling: true });
 
-let jogosCache = [];
-let ultimoFetch = 0;
-
-// Buscar jogos ao vivo no Flashscore
+// Buscar jogos ao vivo via API-Futebol
 async function buscarJogosAoVivo() {
-  const agora = Date.now();
-  if (jogosCache.length > 0 && (agora - ultimoFetch < 60000)) {
-    return jogosCache;
+  try {
+    const { data } = await axios.get("https://api.api-futebol.com.br/v1/ao-vivo", {
+      headers: {
+        Authorization: `Bearer ${apiKey}`
+      }
+    });
+    return data;
+  } catch (err) {
+    console.error("Erro ao buscar jogos:", err.message);
+    return [];
   }
-
-  const url = "https://www.flashscore.com.br/";
-  const { data } = await axios.get(url, {
-    headers: {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-      "Accept-Language": "pt-BR,pt;q=0.9",
-      "Accept": "text/html,application/xhtml+xml"
-    }
-  });
-
-  const $ = cheerio.load(data);
-  const jogos = [];
-
-  // Seleciona apenas partidas em andamento
-  $(".event__match--live").each((i, el) => {
-    const home = $(el).find(".event__participant--home").text().trim();
-    const away = $(el).find(".event__participant--away").text().trim();
-    const placar = $(el).find(".event__scores").text().trim();
-    const tempo = $(el).find(".event__stage--block").text().trim();
-
-    if (home && away) {
-      jogos.push({ home, away, placar, tempo });
-    }
-  });
-
-  ultimoFetch = agora;
-  jogosCache = jogos;
-
-  console.log("Jogos encontrados:", jogos.length);
-  return jogos;
 }
 
 // Gerar análise com Hugging Face
@@ -74,14 +48,14 @@ bot.on('message', async (msg) => {
   if (texto.includes("entradas") || texto.includes("/start")) {
     const jogos = await buscarJogosAoVivo();
 
-    if (jogos.length === 0) {
+    if (!jogos || jogos.length === 0) {
       bot.sendMessage(chatId, "⏸️ Nenhum jogo em andamento no momento.");
       return;
     }
 
     let lista = "Jogos em andamento:\n\n";
     jogos.forEach((jogo, i) => {
-      lista += `(${i+1}) ${jogo.home} vs ${jogo.away}\nPlacar: ${jogo.placar}\nTempo: ${jogo.tempo}\n\n`;
+      lista += `(${i+1}) ${jogo.time_mandante.nome_popular} vs ${jogo.time_visitante.nome_popular}\nPlacar: ${jogo.placar_mandante} - ${jogo.placar_visitante}\nCampeonato: ${jogo.campeonato.nome}\n\n`;
     });
 
     bot.sendMessage(chatId, lista);
@@ -90,13 +64,15 @@ bot.on('message', async (msg) => {
 
   if (texto.startsWith("analisar jogo")) {
     const numero = parseInt(texto.replace("analisar jogo", "").trim());
-    if (isNaN(numero) || numero < 1 || numero > jogosCache.length) {
+    const jogos = await buscarJogosAoVivo();
+
+    if (isNaN(numero) || numero < 1 || numero > jogos.length) {
       bot.sendMessage(chatId, "⚠️ Número inválido. Escolha um dos jogos listados.");
       return;
     }
 
-    const jogo = jogosCache[numero - 1];
-    let contexto = `Jogo: ${jogo.home} vs ${jogo.away}\nPlacar: ${jogo.placar}\nTempo: ${jogo.tempo}`;
+    const jogo = jogos[numero - 1];
+    let contexto = `Jogo: ${jogo.time_mandante.nome_popular} vs ${jogo.time_visitante.nome_popular}\nPlacar: ${jogo.placar_mandante} - ${jogo.placar_visitante}\nCampeonato: ${jogo.campeonato.nome}`;
     const respostaIA = await gerarAnaliseTitanium(contexto);
 
     bot.sendMessage(chatId, respostaIA);
