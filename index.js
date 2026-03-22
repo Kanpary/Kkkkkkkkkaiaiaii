@@ -11,7 +11,7 @@ const bot = new TelegramBot(token, { polling: true });
 let jogosCache = [];
 let ultimoFetch = 0;
 
-// Função para buscar jogos ao vivo com cache
+// Função para buscar jogos ao vivo com cache e headers
 async function buscarJogosAoVivo() {
   const agora = Date.now();
   if (jogosCache.length > 0 && (agora - ultimoFetch < 60000)) {
@@ -19,10 +19,17 @@ async function buscarJogosAoVivo() {
   }
 
   const url = "https://www.sofascore.com/football/live";
-  const { data } = await axios.get(url);
-  const $ = cheerio.load(data);
+  const { data } = await axios.get(url, {
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122 Safari/537.36",
+      "Accept-Language": "en-US,en;q=0.9",
+      "Accept": "text/html,application/xhtml+xml"
+    }
+  });
 
+  const $ = cheerio.load(data);
   const jogos = [];
+
   $(".event-row").each((i, el) => {
     const home = $(el).find(".cell__content--home").text().trim();
     const away = $(el).find(".cell__content--away").text().trim();
@@ -44,10 +51,17 @@ async function buscarJogosAoVivo() {
 
 // Função para buscar estatísticas de um jogo específico
 async function buscarEstatisticasJogo(urlJogo) {
-  const { data } = await axios.get(urlJogo);
-  const $ = cheerio.load(data);
+  const { data } = await axios.get(urlJogo, {
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122 Safari/537.36",
+      "Accept-Language": "en-US,en;q=0.9",
+      "Accept": "text/html,application/xhtml+xml"
+    }
+  });
 
+  const $ = cheerio.load(data);
   const estatisticas = {};
+
   $(".stat__row").each((i, el) => {
     const nome = $(el).find(".stat__name").text().trim();
     const home = $(el).find(".stat__home").text().trim();
