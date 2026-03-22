@@ -11,7 +11,6 @@ const bot = new TelegramBot(token, { polling: true });
 let jogosCache = [];
 let ultimoFetch = 0;
 
-// Função para buscar jogos ao vivo com cache e headers
 async function buscarJogosAoVivo() {
   const agora = Date.now();
   if (jogosCache.length > 0 && (agora - ultimoFetch < 60000)) {
@@ -45,11 +44,10 @@ async function buscarJogosAoVivo() {
   ultimoFetch = agora;
   jogosCache = jogos;
 
-  console.log("Jogos encontrados:", jogos.length); // log mínimo
+  console.log("Jogos encontrados:", jogos.length);
   return jogos;
 }
 
-// Função para buscar estatísticas de um jogo específico
 async function buscarEstatisticasJogo(urlJogo) {
   const { data } = await axios.get(urlJogo, {
     headers: {
@@ -74,7 +72,6 @@ async function buscarEstatisticasJogo(urlJogo) {
   return estatisticas;
 }
 
-// Função para gerar análise com Hugging Face
 async function gerarAnaliseTitanium(contexto) {
   const response = await fetch("https://router.huggingface.co/models/mistralai/Mistral-7B-Instruct", {
     method: "POST",
@@ -91,12 +88,10 @@ async function gerarAnaliseTitanium(contexto) {
   return data[0]?.generated_text || "⚠️ Não foi possível gerar análise.";
 }
 
-// Bot Telegram
 bot.on('message', async (msg) => {
   const chatId = msg.chat.id;
   const texto = msg.text.toLowerCase();
 
-  // Comando inicial: listar jogos
   if (texto.includes("entradas") || texto.includes("/start")) {
     const jogos = await buscarJogosAoVivo();
 
@@ -114,7 +109,6 @@ bot.on('message', async (msg) => {
     bot.sendMessage(chatId, "Digite 'analisar jogo X' para ver estatísticas detalhadas (ex: analisar jogo 2).");
   }
 
-  // Comando para analisar jogo específico
   if (texto.startsWith("analisar jogo")) {
     const numero = parseInt(texto.replace("analisar jogo", "").trim());
     if (isNaN(numero) || numero < 1 || numero > jogosCache.length) {
